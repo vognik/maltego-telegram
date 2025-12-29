@@ -1,107 +1,165 @@
-# Maltego Telegram
+# 🔎 Maltego Telegram  
+**OSINT Transforms for Telegram investigations**
 
-![preview.png](https://github.com/user-attachments/assets/5463e9a9-9db3-4b0d-a888-bd19f5190cac)
+![preview](https://github.com/user-attachments/assets/5463e9a9-9db3-4b0d-a888-bd19f5190cac)
 
-**Telegram Maltego** — a free set of Transforms for Maltego that enables OSINT investigations in the Telegram messenger.
+**Maltego Telegram** is a free set of Maltego Transforms designed for OSINT investigations in the Telegram messenger.
 
-Initially designed solely to simplify de-anonymization through stickers/emojis, it has since expanded far beyond its original functionality, allowing for more advanced investigations.
+The project originally focused on de-anonymization via stickers and emoji, but has since evolved into a full-featured toolkit for analyzing Telegram channels, groups, and user profiles.
 
-**Features:**
+---
 
-- Getting Telegram profile by phone number
-- Getting a linked Telegram channel group
-- Getting a list of Telegram group administrators
-- Getting a list of authors of a Telegram channel
-- Collect all forwarded & similar channels by Channel
-- Search for deleted posts and generate links to view them
-- Indexing of all stickers/emoji in Telegram channel
-- Identification of the creator of a set of stickers/emoji
+## 🚀 Features
 
-## How it works
-Currently, there are over 10 available Transforms. A full list can be found in the directory of the same name, as well as in the Maltego program when you import them.
+With Maltego Telegram you can:
 
-Here’s how some of these Transforms work.
+- 📱 Retrieve a Telegram profile by phone number  
+- 👥 Discover groups and chats linked to a Telegram channel  
+- 🛡 Get a list of Telegram group administrators  
+- ✍️ Identify authors of Telegram channels  
+- 🔁 Collect forwarded and audience-overlapping (similar) channels  
+- 🗑 Detect deleted posts and generate links to archived content  
+- 😀 Index all stickers and emoji used in a Telegram channel  
+- 🧩 Identify creators of sticker and emoji packs  
 
-### Stickers and their creators
-![stickers.png](https://github.com/user-attachments/assets/d5ebb835-138f-4d4e-8b52-570dee9babb0)
+More than **10 Transforms** are currently available.  
+A full list can be found:
+- in the `Transforms` directory  
+- directly in Maltego after importing the project
 
-Each Telegram user has their own UID.
+---
 
-Each sticker set that a user creates has its ID hidden in it.
+## 🧠 How it works
 
-To reveal it, my Transform executes the following algorithm:
-1. Make an API request to get information about the sticker set
-2. Take the value of the "ID" key from the response
-3. Perform a binary shift by 32 to the right.
+Below are some key investigation scenarios enabled by the Transforms.
 
-The resulting UID can be exchanged for a familiar login using the `@tgdb_bot` bot, and thus reveal the user's profile.
+---
 
-**The author of a channel who did not leave contacts can be de-anonymized. To do this, you need to scan his channel and find the sticker packs that he has ever created. My Transform for Maltego does this automatically.**
+### 😀 Stickers and their creators  
 
-Find out more: [What's wrong with stickers in Telegram? Deanonymize anonymous channels in two clicks](https://hackernoon.com/whats-wrong-with-stickers-in-telegram-deanonymize-anonymous-channels-in-two-clicks)
+![stickers](https://github.com/user-attachments/assets/d5ebb835-138f-4d4e-8b52-570dee9babb0)
 
-### Similar channels
-![similar.png](https://github.com/user-attachments/assets/87ff0649-3b8f-4e7c-85a7-1a5451230a6f)
+Every Telegram user has a unique **UID**.  
+When a user creates a sticker pack, this UID is **embedded inside the pack ID**.
 
-Telegram has a built-in function to search for channels whose audience overlaps with the current one. 
+The Transform extracts it using the following logic:
 
-Maltego makes the search more convenient by visualizing the results.
+1. Request sticker pack metadata via the Telegram API  
+2. Extract the value of the `id` field  
+3. Perform a 32-bit right binary shift  
 
-### Profiles that may be associated with the channel
-![forwarded.png](https://github.com/user-attachments/assets/6f2d875a-c0d1-48da-b5c2-82a5912c1c71)
+The resulting UID can be resolved to a username (for example, via the `@tgdb_bot`).
 
-Administrators can forward their own messages and other users to their channel.
+📌 **Practical use case**  
+If a channel author does not provide contact details, they can be de-anonymized by scanning the channel for sticker packs they have created.  
+Maltego Telegram performs this process automatically.
 
-If a user has changed their privacy settings and removed the link to their account (Forwarded Messages = Nobody), this will only apply to forwarding their new messages.
+🔗 Read more:  
+[What's wrong with stickers in Telegram? Deanonymize anonymous channels in two clicks](https://hackernoon.com/whats-wrong-with-stickers-in-telegram-deanonymize-anonymous-channels-in-two-clicks)
 
-Old forwarded messages will still link to their real profile.
+---
 
-### Deleted posts and their content
-![deleted.png](https://github.com/user-attachments/assets/f3708918-4c9f-44f2-8be9-483e4f19cbea)
+### 🔗 Similar channels  
 
-In Telegram, each post has a unique numeric ID, which increases with each new post. The first post in a channel has ID 1, the second post has ID 2, and so on. If there are gaps between post numbers, it means that some posts have been deleted.
+![similar](https://github.com/user-attachments/assets/87ff0649-3b8f-4e7c-85a7-1a5451230a6f)
 
-There are services that index Telegram content. Even if a post has been deleted from Telegram, it may still be stored in these services.
+Telegram provides a built-in feature for discovering channels with overlapping audiences, but the results are shown only as a list.
 
-This Transform helps you find deleted posts and creates links to view them in the archives.
+Maltego enhances this by:
+- visualizing relationships,
+- revealing channel networks,
+- simplifying ecosystem-level analysis.
 
-## Installation
+---
 
-1. Clone the repository
+### 🔁 Profiles associated with a channel  
 
-```
+![forwarded](https://github.com/user-attachments/assets/6f2d875a-c0d1-48da-b5c2-82a5912c1c71)
+
+Channel administrators often:
+- forward their own messages,
+- repost content from personal accounts.
+
+Even if a user later restricts forwarding (`Forwarded Messages = Nobody`), **older forwarded messages remain linked to the original profile**.
+
+This Transform:
+- detects such messages,
+- connects channels to real user profiles.
+
+---
+
+### 🗑 Deleted posts and archived content  
+
+![deleted](https://github.com/user-attachments/assets/f3708918-4c9f-44f2-8be9-483e4f19cbea)
+
+Each Telegram post has a sequential numeric ID:
+- 1, 2, 3, 4 …
+
+Missing IDs indicate that posts were deleted.
+
+This Transform:
+- detects gaps in post IDs,
+- checks public Telegram archives,
+- generates links to preserved copies of deleted content.
+
+---
+
+## ⚙️ Installation
+
+### 1️⃣ Clone the repository
+```bash
 git clone https://github.com/vognik/maltego-telegram
 ```
 
-2. Install dependencies
-
-```
+### 2️⃣ Install dependencies
+```bash
 pip install -r requirements.txt
 ```
 
-3. Specify secrets in `config.ini`:
-- `api_id` and `api_hash`: guide [https://core.telegram.org/api/obtaining_api_id](https://core.telegram.org/api/obtaining_api_id)
-- `bot_token`: guide [https://core.telegram.org/bots/tutorial#obtain-your-bot-token](https://core.telegram.org/bots/tutorial#obtain-your-bot-token)
+### 3️⃣ Configure `config.ini`
 
-4. Log in to Telegram
+Set the following values:
+- `api_id` and `api_hash`  
+  https://core.telegram.org/api/obtaining_api_id  
+- `bot_token`  
+  https://core.telegram.org/bots/tutorial#obtain-your-bot-token  
 
-```
+---
+
+### 4️⃣ Log in to Telegram
+```bash
 python login.py
 ```
 
-5. Generate Transforms Import File
-
-```
+### 5️⃣ Generate Transform files
+```bash
 python project.py
 ```
 
-6. Import `entities.mtz` and `telegram.mtz` files using Import Config in Maltego
-7. Check if they work: new Entities and Transforms should appear in Maltego
+---
 
-![imports.png](https://github.com/user-attachments/assets/e9ce7b6f-b14e-4239-83cd-2510ac3db9d5)
+### 6️⃣ Import into Maltego
 
+Import the following files using **Import Config** in Maltego:
+- `entities.mtz`
+- `telegram.mtz`
 
-## Usage
-Drag and drop an entity from the Entity Pallete, right-click and select the desired Transform.
+![imports](https://github.com/user-attachments/assets/e9ce7b6f-b14e-4239-83cd-2510ac3db9d5)
 
+---
+
+## ▶️ Usage
+
+1. Drag an entity from the **Entity Palette**
+2. Right-click on it
+3. Select the desired Transform
+
+🎥 Demo:  
 https://github.com/user-attachments/assets/1fa23899-fd52-435f-830b-0df27cb65439
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**.  
+See the `LICENSE` file for details.
