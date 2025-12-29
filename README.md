@@ -154,8 +154,9 @@ Import the following files using **Import Config** in Maltego:
 2. Right-click on it
 3. Select the desired Transform
 
-🎥 Demo:  
-https://github.com/user-attachments/assets/1fa23899-fd52-435f-830b-0df27cb65439
+🎥 Demo:
+
+https://github.com/user-attachments/assets/dba4b5b1-a82d-4e26-b8e4-d063f5456f88
 
 ---
 
