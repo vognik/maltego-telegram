@@ -162,5 +162,5 @@ https://github.com/user-attachments/assets/dba4b5b1-a82d-4e26-b8e4-d063f5456f88
 
 ## 📄 License
 
-This project is licensed under the **MIT License**.  
+This project is licensed under the **GPL-3.0 license**.  
 See the `LICENSE` file for details.
