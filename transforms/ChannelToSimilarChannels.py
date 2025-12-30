@@ -3,14 +3,14 @@ from maltego_trx.maltego import MaltegoMsg, MaltegoTransform
 from settings import app, loop, threads
 from extensions import registry
 
-from utils import message_is_forwarded_from_another_chat, fetch_web_info, create_maltego_entity
+from utils import (
+    fetch_web_info,
+    create_maltego_entity,
+)
 import multiprocessing
-import logging
 
 
 async def fetch_similar_channels(username: str):
-    channels = []
-
     async with app:
         return await app.get_similar_channels(username)
 
@@ -23,11 +23,13 @@ def assign_first_username(channels):
     return channels
 
 
-@registry.register_transform(display_name="To Similar Channels", input_entity="interlinked.telegram.Channel",
-                             description="This transform is designed to identify similarly themed public channels by analyzing similarities in their subscriber bases",
-                             output_entities=["interlinked.telegram.Channel"])
+@registry.register_transform(
+    display_name="To Similar Channels",
+    input_entity="interlinked.telegram.Channel",
+    description="This transform is designed to identify similarly themed public channels by analyzing similarities in their subscriber bases",
+    output_entities=["interlinked.telegram.Channel"],
+)
 class ChannelToSimilarChannels(DiscoverableTransform):
-
     @classmethod
     def create_entities(cls, request: MaltegoMsg, response: MaltegoTransform):
         username = request.getProperty("properties.channel")

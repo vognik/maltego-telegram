@@ -20,11 +20,13 @@ async def find_missing_post_ids(username: str) -> list[int]:
     return missing_numbers
 
 
-@registry.register_transform(display_name="To Deleted Posts", input_entity="interlinked.telegram.Channel",
-                             description="This Transform finds deleted posts and generates links to view them",
-                             output_entities=["maltego.URL"])
+@registry.register_transform(
+    display_name="To Deleted Posts",
+    input_entity="interlinked.telegram.Channel",
+    description="This Transform finds deleted posts and generates links to view them",
+    output_entities=["maltego.URL"],
+)
 class ChannelToDeletedPosts(DiscoverableTransform):
-
     @classmethod
     def create_entities(cls, request: MaltegoMsg, response: MaltegoTransform):
         username = request.getProperty("properties.channel")

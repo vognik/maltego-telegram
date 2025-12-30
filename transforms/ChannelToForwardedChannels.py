@@ -14,23 +14,25 @@ async def fetch_forwarded_channels(username: str):
             if not message_is_forwarded_from_another_chat(message, username):
                 continue
 
-            channels.append(message.forward_from_chat)  
+            channels.append(message.forward_from_chat)
 
     return channels
 
 
-@registry.register_transform(display_name="To Forwarded Channels", input_entity="interlinked.telegram.Channel",
-                             description="This Transform receives all channels whose posts have been forwarded by this channel",
-                             output_entities=["interlinked.telegram.Channel"])
+@registry.register_transform(
+    display_name="To Forwarded Channels",
+    input_entity="interlinked.telegram.Channel",
+    description="This Transform receives all channels whose posts have been forwarded by this channel",
+    output_entities=["interlinked.telegram.Channel"],
+)
 class ChannelToForwardedChannels(DiscoverableTransform):
-
     @classmethod
     def create_entities(cls, request: MaltegoMsg, response: MaltegoTransform):
         username = request.getProperty("properties.channel")
         channels = loop.run_until_complete(fetch_forwarded_channels(username))
 
         for channel in channels:
-            identity = channel.username if channel.username else channel.id 
+            identity = channel.username if channel.username else channel.id
 
             entity = response.addEntity("interlinked.telegram.Channel", value=identity)
             entity.addProperty("properties.title", value=channel.title)

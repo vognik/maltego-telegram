@@ -2,6 +2,7 @@
 transforms.csv
 settings.csv
 my_account.session
+telegram.mtz
 
 # folders
 __pycache__/

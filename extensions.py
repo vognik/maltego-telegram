@@ -1,10 +1,10 @@
 from maltego_trx.decorator_registry import TransformRegistry
 
 registry = TransformRegistry(
-        owner="Vognik",
-        author="Vognik",
-        host_url="https://transforms.acme.org",
-        seed_ids=["demo"]
+    owner="vognik",
+    author="vognik",
+    host_url="https://transforms.acme.org",
+    seed_ids=["demo"],
 )
 
 # The rest of these attributes are optional

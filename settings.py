@@ -5,6 +5,7 @@ import asyncio
 import os
 import multiprocessing
 
+
 class Config:
     def __init__(self, filename="config.ini"):
         self.config = configparser.ConfigParser()
@@ -17,6 +18,7 @@ class Config:
             return self.config.get(section, key)
         except (configparser.NoSectionError, configparser.NoOptionError):
             return fallback
+
 
 config = Config()
 

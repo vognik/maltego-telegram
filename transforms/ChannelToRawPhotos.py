@@ -1,5 +1,4 @@
 import io
-import base64
 from dataclasses import dataclass
 from PIL import Image, ExifTags
 from maltego_trx.transform import DiscoverableTransform
@@ -8,9 +7,10 @@ from pyrogram.types import Document
 from settings import app, loop, limit
 from extensions import registry
 from utils import message_is_forwarded_from_another_chat
+from adapters.media_wrapper import MediaWrapper
 
 
-def flatten_deepest(d, parent_key=''):
+def flatten_deepest(d, parent_key=""):
     items = []
     for key, value in d.items():
         full_key = f"{parent_key}.{key}" if parent_key else str(key)
@@ -38,7 +38,10 @@ class ExifExtractor:
             if ifd_code not in exif:
                 continue
             ifd_data = exif.get_ifd(ifd_code)
-            parsed = {self._resolve_tag_name(tag_id): value for tag_id, value in ifd_data.items()}
+            parsed = {
+                self._resolve_tag_name(tag_id): value
+                for tag_id, value in ifd_data.items()
+            }
             if parsed:
                 result[ifd_name] = parsed
         return result
@@ -49,28 +52,18 @@ class ExifExtractor:
 
 
 @dataclass
-class Photo:
-    document: Document
-    url: str
+class PhotoWrapper(MediaWrapper):
+    original: Document
     file_bytes: bytes = None
     metadata: dict = None
-    thumbnail_b64: str = None
 
     @property
     def file_name(self):
-        return getattr(self.document, "file_name", None)
-
-    def to_properties(self):
-        props = {}
-        for name, value in vars(self.document).items():
-            if name in ("_client", "thumbs"):
-                continue
-            props[name] = value
-        return props
+        return getattr(self.original, "file_name", None)
 
     async def download_file(self):
         if self.file_bytes is None:
-            file = await app.download_media(self.document, in_memory=True)
+            file = await app.download_media(self.original, in_memory=True)
             if file:
                 self.file_bytes = bytes(file.getbuffer())
         return self.file_bytes
@@ -81,14 +74,6 @@ class Photo:
         if self.file_bytes:
             extractor = ExifExtractor()
             self.metadata = extractor.extract(self.file_bytes)
-
-    async def encode_thumbnail(self):
-        if not getattr(self.document, "thumbs", None):
-            self.thumbnail_b64 = None
-            return
-        file = await app.download_media(self.document.thumbs[0], in_memory=True)
-        if file:
-            self.thumbnail_b64 = base64.b64encode(file.getbuffer()).decode()
 
 
 async def fetch_photos_from_channel(username):
@@ -103,9 +88,8 @@ async def fetch_photos_from_channel(username):
             if not message.document.mime_type.startswith("image/"):
                 continue
 
-            photo = Photo(
-                document=message.document,
-                url=f"https://t.me/{username}/{message.id}"
+            photo = PhotoWrapper(
+                original=message.document, url=f"https://t.me/{username}/{message.id}"
             )
 
             await photo.download_file()
@@ -121,10 +105,9 @@ async def fetch_photos_from_channel(username):
     display_name="To RAW Photos",
     input_entity="interlinked.telegram.Channel",
     description="This Transform finds raw photos in a Telegram channel and provides details like filename, thumbnail, and more for each photo.",
-    output_entities=["maltego.Image"]
+    output_entities=["maltego.Image"],
 )
 class ChannelToRawPhotos(DiscoverableTransform):
-
     @classmethod
     def create_entities(cls, request: MaltegoMsg, response: MaltegoTransform):
         username = request.getProperty("properties.channel")

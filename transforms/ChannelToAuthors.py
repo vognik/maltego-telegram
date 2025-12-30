@@ -11,19 +11,24 @@ async def fetch_authors(username: str):
 
     async with app:
         async for message in app.get_chat_history(username, limit=limit):
-            if message_is_forwarded_from_another_chat(message, username) or not message.author_signature:
+            if (
+                message_is_forwarded_from_another_chat(message, username)
+                or not message.author_signature
+            ):
                 continue
-            
+
             authors.append(message.author_signature)
 
     return authors
 
 
-@registry.register_transform(display_name="To Authors", input_entity="interlinked.telegram.Channel",
-                             description="This Transform finds authors who published posts",
-                             output_entities=["interlinked.telegram.Author"])
+@registry.register_transform(
+    display_name="To Authors",
+    input_entity="interlinked.telegram.Channel",
+    description="This Transform finds authors who published posts",
+    output_entities=["interlinked.telegram.Author"],
+)
 class ChannelToAuthors(DiscoverableTransform):
-
     @classmethod
     def create_entities(cls, request: MaltegoMsg, response: MaltegoTransform):
         username = request.getProperty("properties.channel")

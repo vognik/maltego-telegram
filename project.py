@@ -7,7 +7,7 @@ from maltego_trx.handler import handle_run
 from maltego_trx.registry import register_transform_classes
 from maltego_trx.server import app as application
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 register_transform_classes(transforms)
 
@@ -18,8 +18,8 @@ registry.write_local_mtz(
     working_dir=".",
     command=r"python",
     params="project.py",
-    debug=True
+    debug=True,
 )
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     handle_run(__name__, sys.argv, application)
