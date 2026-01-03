@@ -94,7 +94,7 @@ async def fetch_photos_from_channel(username):
 
             await photo.download_file()
             await photo.extract_metadata()
-            await photo.encode_thumbnail()
+            await photo.encode_thumbnail(app)
 
             photos.append(photo)
 
