@@ -1,115 +1,113 @@
+"""
+Transform: Channel to Emoji Sets
+Extracts all custom emoji sets used in a channel with MTProto thumbnails.
+100% MTProto, zero bot_token, zero Bot API.
+"""
+
+import asyncio
+from typing import Dict, List, Set, Tuple
 from maltego_trx.transform import DiscoverableTransform
 from maltego_trx.maltego import MaltegoMsg, MaltegoTransform
-from settings import app, loop, limit
-from extensions import registry
-
 from pyrogram.enums import MessageEntityType
 
-from utils import media_fetcher, message_is_forwarded_from_another_chat
+from extensions import registry
+from client import run_telegram, get_client
+from settings import LIMIT, CONCURRENCY
+from utils import safe_get_identifier, normalize_identifier, message_is_forwarded_from_another_chat, get_custom_emoji_thumbnail_b64
 
 
-async def collect_available_reactions(username):
-    reactions = []
+async def collect_channel_emojis(identifier: str) -> List[Tuple[str, int]]:
+    """
+    Collect custom emoji IDs from message text, captions, and chat reactions.
+    Returns list of unique (set_name, sample_emoji_id).
+    """
+    client = get_client()
+    clean_id = normalize_identifier(identifier)
+    emoji_ids: Set[int] = set()
 
-    async with app:
-        chat_info = await app.get_chat(username)
+    # 1. Reactions
+    try:
+        chat = await client.get_chat(clean_id)
+        if getattr(chat, "available_reactions", None) and chat.available_reactions.reactions:
+            for r in chat.available_reactions.reactions:
+                if getattr(r, "custom_emoji_id", None):
+                    emoji_ids.add(r.custom_emoji_id)
+    except Exception:
+        pass
 
-    if chat_info.available_reactions:
-        reactions = chat_info.available_reactions.reactions
-        if reactions is None:
-            return []
+    # 2. Chat history messages
+    async for message in client.get_chat_history(clean_id, limit=LIMIT):
+        if message_is_forwarded_from_another_chat(message, clean_id):
+            continue
 
-    return [i.custom_emoji_id for i in reactions] if reactions else []
+        entities = (message.entities or []) + (message.caption_entities or [])
+        for ent in entities:
+            if ent.type == MessageEntityType.CUSTOM_EMOJI and getattr(ent, "custom_emoji_id", None):
+                emoji_ids.add(ent.custom_emoji_id)
 
+    if not emoji_ids:
+        return []
 
-async def collect_emoji_ids(username):
-    emoji_ids = set()
+    # 3. Batch fetch emoji metadata via MTProto
+    batch_size = 150
+    emoji_id_list = list(emoji_ids)
+    unique_sets: Dict[str, int] = {}
 
-    async with app:
-        async for message in app.get_chat_history(username, limit=limit):
-            if message_is_forwarded_from_another_chat(message, username):
-                continue
+    for i in range(0, len(emoji_id_list), batch_size):
+        batch = emoji_id_list[i : i + batch_size]
+        try:
+            stickers = await client.get_custom_emoji_stickers(custom_emoji_ids=batch)
+            for sticker in stickers:
+                if sticker.set_name and sticker.set_name not in unique_sets:
+                    unique_sets[sticker.set_name] = sticker.custom_emoji_id
+        except Exception:
+            pass
 
-            entities = message.entities or []
-            caption_entities = message.caption_entities or []
-
-            for entity in entities + caption_entities:
-                if entity.type == MessageEntityType.CUSTOM_EMOJI and hasattr(
-                    entity, "custom_emoji_id"
-                ):
-                    emoji_ids.add(entity.custom_emoji_id)
-
-    available_reactions = await collect_available_reactions(username)
-    emoji_ids.update(available_reactions)
-
-    return list(emoji_ids)
-
-
-async def fetch_emoji_info(emoji_ids):
-    emoji_sets = []
-    batch_size = 200
-    current_batch = []
-
-    async with app:
-        for custom_emoji_id in emoji_ids:
-            if custom_emoji_id is not None:
-                current_batch.append(custom_emoji_id)
-
-            if len(current_batch) == batch_size:
-                emoji_info_list = await app.get_custom_emoji_stickers(
-                    custom_emoji_ids=current_batch
-                )
-                emoji_sets.extend(emoji_info_list)
-                current_batch.clear()
-
-        if current_batch:
-            emoji_info_list = await app.get_custom_emoji_stickers(
-                custom_emoji_ids=current_batch
-            )
-            emoji_sets.extend(emoji_info_list)
-
-    emoji_sets = remove_duplicates(emoji_sets)
-
-    return emoji_sets
+    return list(unique_sets.items())
 
 
-def remove_duplicates(emoji_sets):
-    seen_set_names = set()
-    unique_emoji_sets = []
+async def fetch_emoji_sets_with_thumbs(identifier: str) -> List[Tuple[str, str]]:
+    client = get_client()
+    emoji_sets = await collect_channel_emojis(identifier)
+    results = []
 
-    for emoji in emoji_sets:
-        if emoji.set_name not in seen_set_names:
-            seen_set_names.add(emoji.set_name)
-            unique_emoji_sets.append(emoji)
+    sem = asyncio.Semaphore(CONCURRENCY)
 
-    return unique_emoji_sets
+    async def _fetch_thumb(set_name: str, emoji_id: int):
+        async with sem:
+            thumb_b64 = await get_custom_emoji_thumbnail_b64(client, emoji_id)
+            return set_name, thumb_b64
+
+    tasks = [_fetch_thumb(name, eid) for name, eid in emoji_sets]
+    if tasks:
+        results = await asyncio.gather(*tasks)
+
+    return results
 
 
 @registry.register_transform(
     display_name="To Emoji Sets",
     input_entity="interlinked.telegram.Channel",
-    description="Extracts all emoji sets from a Telegram channel",
+    description="Extracts custom emoji packs used in a Telegram channel with previews",
     output_entities=["interlinked.telegram.StickerSet"],
 )
 class ChannelToEmojiSet(DiscoverableTransform):
     @classmethod
     def create_entities(cls, request: MaltegoMsg, response: MaltegoTransform):
-        username = request.getProperty("properties.channel")
-        emoji_sets = loop.run_until_complete(collect_emoji_ids(username))
-        emojis_info = loop.run_until_complete(fetch_emoji_info(emoji_sets))
+        identifier = safe_get_identifier(request, "properties.channel")
+        if not identifier:
+            response.addUIMessage("No channel specified", messageType="PartialError")
+            return
 
-        for emoji_set in emojis_info:
-            emoji_entity = response.addEntity(
-                "interlinked.telegram.StickerSet", value=emoji_set.set_name
-            )
-
-            thumbnail = media_fetcher.get_media_preview_url(
-                emoji_set.set_name,
-                file_id=emoji_set.thumbs[0].file_id,
-                media_type="emoji",
-            )
-            emoji_entity.addProperty("properties.thumbnail", value=thumbnail)
-            emoji_entity.addProperty("properties.title", value=emoji_set.set_name)
-
-            emoji_entity.setLinkColor("0xFFAEC9")
-            emoji_entity.setLinkThickness(2)
+        try:
+            sets_with_thumbs = run_telegram(fetch_emoji_sets_with_thumbs(identifier))
+            for set_name, thumb_b64 in sets_with_thumbs:
+                entity = response.addEntity("interlinked.telegram.StickerSet", value=set_name)
+                entity.addProperty("properties.title", value=set_name)
+                entity.addProperty("properties.short_name", value=set_name)
+                if thumb_b64:
+                    entity.addProperty("base64", value=thumb_b64)
+                entity.setLinkColor("0xFFAEC9")
+                entity.setLinkThickness(2)
+        except Exception as e:
+            response.addUIMessage(f"Error extracting emoji sets: {e}", messageType="PartialError")

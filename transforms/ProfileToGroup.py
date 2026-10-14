@@ -1,105 +1,221 @@
-import base64
-import asyncio
-import requests
-from dataclasses import dataclass
-from typing import Optional, List, Any
+"""
+Transform: Profile to Groups
+Finds public Telegram groups associated with a user profile using:
+1. TgScan API (tgdev.io) with support for Production and Test API keys.
+2. Fallback to MTProto bot (config.ini [bots] group_search_bot).
+"""
 
+import asyncio
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 from maltego_trx.transform import DiscoverableTransform
 from maltego_trx.maltego import MaltegoMsg, MaltegoTransform
-from settings import app, loop, test_tgscan_token, prod_tgscan_token, tgscan_debug_mode
+from pyrogram.types import Chat
+
 from extensions import registry
+from client import run_telegram, get_client
+from settings import GROUP_SEARCH_BOT, CONCURRENCY, TIMEOUT
+from adapters.tgscan import async_query_tgscan
+from utils import (
+    safe_get_identifier,
+    normalize_identifier,
+    download_avatar_b64,
+    query_inline_bot,
+    query_bot_dialog,
+    extract_group_links_from_text,
+)
+
 
 @dataclass
-class TelegramGroup:
-    username: str
+class ResolvedGroup:
+    chat: Optional[Chat]
+    identifier: str
     title: str
-    photo_b64: Optional[str] = None
-    raw_source_obj: Any = None 
+    avatar_b64: Optional[str] = None
+    group_id: Optional[int] = None
+    source: str = "mtproto"
+    date_updated: Optional[str] = None
 
-def search_groups_api(username: str) -> List[dict]:
-    if tgscan_debug_mode:
-        api_key = test_tgscan_token
-        url = "https://api.tgdev.io/tgscan/v1/test/search"
-    else:
-        api_key = prod_tgscan_token
-        url = "https://api.tgdev.io/tgscan/v1/search"
-    
-    headers = {"Api-Key": api_key}
-    try:
-        r = requests.post(url, 
-                          data={"query": username}, headers=headers, timeout=10)
-        return r.json().get("result", {}).get("groups", [])
-    except Exception:
+
+async def search_user_groups(
+    query: str,
+    api_key: Optional[str] = None,
+    test_mode: Optional[bool] = None,
+) -> List[ResolvedGroup]:
+    """
+    Search for groups associated with a Telegram user profile.
+    Supports TgScan API (both Production and Test keys) with automatic
+    fallback to MTProto bot dialog.
+    """
+    client = get_client()
+    clean_query = normalize_identifier(query)
+    if not clean_query:
         return []
 
-async def unified_resolve(api_groups: List[dict]) -> List[TelegramGroup]:
-    results = []
-    api_map = {g['username']: g for g in api_groups if g.get('username')}
-    usernames = list(api_map.keys())
+    discovered_groups: List[Tuple[str, str, Optional[int], Optional[str], str]] = []
+    # (identifier, title, group_id, date_updated, source)
 
-    async with app:
-        resolve_tasks = [app.get_chat(u) for u in usernames]
-        resolved_chats = await asyncio.gather(*resolve_tasks, return_exceptions=True)
+    # 1. Try TgScan API if configured (prod or test key)
+    try:
+        tgscan_res = await async_query_tgscan(clean_query, api_key=api_key, test_mode=test_mode)
+        if tgscan_res and tgscan_res.groups:
+            source_label = "tgscan_test" if tgscan_res.is_test else "tgscan_prod"
+            for g in tgscan_res.groups:
+                discovered_groups.append(
+                    (g.identifier, g.title, g.id, g.date_updated, source_label)
+                )
+    except Exception:
+        pass
 
-        photo_tasks = []
-        for chat in resolved_chats:
-            if not isinstance(chat, Exception) and chat.photo:
-                photo_tasks.append(app.download_media(chat.photo.small_file_id, in_memory=True))
-            else:
-                photo_tasks.append(asyncio.sleep(0)) 
+    # 2. Fall back to MTProto bot if no TgScan results
+    if not discovered_groups and GROUP_SEARCH_BOT:
+        mtproto_groups: List[str] = []
+        try:
+            inline_results = await query_inline_bot(client, GROUP_SEARCH_BOT, clean_query)
+            if inline_results:
+                for res in inline_results:
+                    msg_text = getattr(res.send_message, "message", "") or getattr(res, "description", "")
+                    groups = extract_group_links_from_text(msg_text)
+                    mtproto_groups.extend(groups)
+        except Exception:
+            pass
 
-        photos_data = await asyncio.gather(*photo_tasks)
+        if not mtproto_groups:
+            reply_message = await query_bot_dialog(
+                client,
+                bot_username=GROUP_SEARCH_BOT,
+                query_text=f"@{clean_query}",
+                timeout=float(TIMEOUT),
+            )
+            if reply_message and reply_message.text:
+                mtproto_groups = extract_group_links_from_text(
+                    reply_message.text, reply_message.entities
+                )
 
-        for i, u_name in enumerate(usernames):
-            chat_obj = resolved_chats[i]
-            api_info = api_map[u_name]
-            
-            if not isinstance(chat_obj, Exception):
-                p_data = photos_data[i]
-                b64 = base64.b64encode(bytes(p_data.getbuffer())).decode("utf-8") if p_data and hasattr(p_data, 'getbuffer') else None
-                
-                results.append(TelegramGroup(
-                    username=chat_obj.username or u_name,
-                    title=chat_obj.title,
-                    photo_b64=b64,
-                    raw_source_obj=chat_obj
-                ))
-            else:
-                results.append(TelegramGroup(
-                    username=u_name,
-                    title=api_info.get("title", u_name),
-                    raw_source_obj=api_info
-                ))
-                
+        for g in mtproto_groups:
+            cleaned = normalize_identifier(g)
+            if cleaned:
+                discovered_groups.append((cleaned, cleaned, None, None, "mtproto_bot"))
+
+    # Deduplicate group identifiers
+    seen = set()
+    unique_groups = []
+    for ident, title, gid, date_upd, src in discovered_groups:
+        ident_lower = ident.lower()
+        if ident_lower not in seen:
+            seen.add(ident_lower)
+            unique_groups.append((ident, title, gid, date_upd, src))
+
+    if not unique_groups:
+        return []
+
+    # Limit to top 15 groups for Maltego graph clarity
+    unique_groups = unique_groups[:15]
+
+    # 3. Resolve groups and download avatars via MTProto concurrently
+    sem = asyncio.Semaphore(CONCURRENCY)
+
+    async def _resolve_group(
+        ident: str, default_title: str, gid: Optional[int], date_upd: Optional[str], src: str
+    ) -> ResolvedGroup:
+        async with sem:
+            try:
+                chat = await client.get_chat(ident)
+                avatar_b64 = await download_avatar_b64(client, chat)
+                return ResolvedGroup(
+                    chat=chat,
+                    identifier=chat.username or str(chat.id),
+                    title=chat.title or default_title,
+                    avatar_b64=avatar_b64,
+                    group_id=chat.id if chat else gid,
+                    source=src,
+                    date_updated=date_upd,
+                )
+            except Exception:
+                return ResolvedGroup(
+                    chat=None,
+                    identifier=ident,
+                    title=default_title,
+                    avatar_b64=None,
+                    group_id=gid,
+                    source=src,
+                    date_updated=date_upd,
+                )
+
+    results = await asyncio.gather(
+        *(_resolve_group(i, t, gid, d, s) for i, t, gid, d, s in unique_groups)
+    )
     return results
+
+
+# Backwards compatibility alias
+search_user_groups_mtproto = search_user_groups
+
 
 @registry.register_transform(
     display_name="To Groups",
     input_entity="interlinked.telegram.UserProfile",
-    description="This Transform uses TgScan API to get all chats that the user is a member of",
-    output_entities="interlinked.telegram.Group",
+    description="Finds public Telegram groups associated with a user profile via TgScan API or MTProto bot",
+    output_entities=["interlinked.telegram.Group"],
 )
 class ProfileToGroup(DiscoverableTransform):
     @classmethod
     def create_entities(cls, request: MaltegoMsg, response: MaltegoTransform):
-        username = request.getProperty("properties.username")
+        username = (
+            safe_get_identifier(request, "properties.username")
+            or safe_get_identifier(request, "properties.channel")
+            or safe_get_identifier(request, "properties.id")
+            or getattr(request, "Value", None)
+        )
         if not username:
+            response.addUIMessage("No username or ID specified", messageType="PartialError")
             return
 
-        api_groups = search_groups_api(username)[:5]
+        # Check transform settings for TgScan overrides
+        setting_api_key = request.getTransformSetting("tgscan_api_key") or None
+        setting_test_mode = None
+        test_mode_str = request.getTransformSetting("tgscan_test_mode")
+        if test_mode_str:
+            setting_test_mode = test_mode_str.lower() in ("true", "1", "yes", "test")
 
-        final_groups = loop.run_until_complete(unified_resolve(api_groups))
+        try:
+            groups = run_telegram(
+                search_user_groups(
+                    username,
+                    api_key=setting_api_key,
+                    test_mode=setting_test_mode,
+                )
+            )
+            if not groups:
+                response.addUIMessage("No associated groups found", messageType="Inform")
+                return
 
-        for group in final_groups:
-            entity = response.addEntity("interlinked.telegram.Group", group.username)
-            entity.addProperty("properties.title", "Title", "loose", group.title)
-            
-            if group.photo_b64:
-                entity.addProperty("base64", "Photo", "loose", group.photo_b64)
+            for group in groups:
+                entity = response.addEntity("interlinked.telegram.Group", value=group.identifier)
+                entity.addProperty("properties.title", value=group.title)
+                if group.avatar_b64:
+                    entity.addProperty("base64", value=group.avatar_b64)
 
-            source = group.raw_source_obj
-            attrs = source.items() if isinstance(source, dict) else vars(source).items()
-            
-            for attr, value in attrs:
-                if value is not None and not str(attr).startswith('_'): 
-                    entity.addProperty(attr, str(attr).capitalize(), "loose", str(value))
+                if group.group_id:
+                    entity.addProperty("properties.id", value=str(group.group_id))
+
+                if group.date_updated:
+                    entity.addProperty("properties.date_updated", value=str(group.date_updated))
+
+                if group.source:
+                    entity.addProperty("properties.source", value=str(group.source))
+
+                if group.chat:
+                    chat = group.chat
+                    entity.addProperty("properties.id", value=str(chat.id))
+                    if chat.username:
+                        entity.addProperty("properties.username", value=chat.username)
+                    if getattr(chat, "members_count", None):
+                        entity.addProperty("properties.members_count", value=str(chat.members_count))
+                    if getattr(chat, "description", None):
+                        entity.addProperty("properties.description", value=chat.description[:200])
+
+                entity.setLinkThickness(2)
+
+        except Exception as e:
+            response.addUIMessage(f"Error querying groups: {e}", messageType="PartialError")

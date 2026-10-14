@@ -1,67 +1,79 @@
+"""
+Transform: Channel to Forwarded Users
+Identifies real user profiles and sender names forwarded into this channel.
+"""
+
+import asyncio
+from typing import Dict, List, Set, Tuple
 from maltego_trx.transform import DiscoverableTransform
 from maltego_trx.maltego import MaltegoMsg, MaltegoTransform
-from settings import app, loop, limit
-from extensions import registry
 from pyrogram.types import User
 
-from utils import create_maltego_entity, fetch_web_info
+from extensions import registry
+from client import run_telegram, get_client
+from settings import LIMIT, CONCURRENCY
+from utils import safe_get_identifier, normalize_identifier, download_avatar_b64, process_profile_entity
 
 
-async def find_forwarded_messages_from_users(username):
-    messages = []
-    async with app:
-        async for message in app.get_chat_history(username, limit=limit):
-            if message.forward_sender_name is not None or isinstance(
-                message.forward_from, User
-            ):
-                messages.append(message)
+async def fetch_forwarded_users_and_authors(
+    identifier: str,
+) -> Tuple[List[Tuple[User, str]], List[str]]:
+    client = get_client()
+    clean_id = normalize_identifier(identifier)
 
-    return messages
+    unique_users: Dict[int, User] = {}
+    unique_authors: Set[str] = set()
 
+    async for message in client.get_chat_history(clean_id, limit=LIMIT):
+        if message.forward_from and isinstance(message.forward_from, User):
+            if message.forward_from.id not in unique_users:
+                unique_users[message.forward_from.id] = message.forward_from
+        elif message.forward_sender_name:
+            name = message.forward_sender_name.strip()
+            if name:
+                unique_authors.add(name)
 
-def get_unique_forward_users(messages):
-    unique_forward_users = []
-    seen_ids = set()
+    # Concurrently fetch user avatars via MTProto
+    users = list(unique_users.values())
+    sem = asyncio.Semaphore(CONCURRENCY)
 
-    for message in messages:
-        if message.forward_from is not None and message.forward_from.id not in seen_ids:
-            unique_forward_users.append(message.forward_from)
-            seen_ids.add(message.forward_from.id)
+    async def _fetch_avatar(u: User):
+        async with sem:
+            b64 = await download_avatar_b64(client, u)
+            return u, b64
 
-    return unique_forward_users
+    users_with_avatars = []
+    if users:
+        users_with_avatars = await asyncio.gather(*(_fetch_avatar(u) for u in users))
+
+    return users_with_avatars, sorted(unique_authors)
 
 
 @registry.register_transform(
     display_name="To Forwarded Users",
     input_entity="interlinked.telegram.Channel",
-    description="This Transform receives all users mentioned by this channel",
+    description="Receives all user profiles and sender names whose messages were forwarded into this channel",
     output_entities=["interlinked.telegram.UserProfile", "interlinked.telegram.Author"],
 )
 class ChannelToForwardedUsers(DiscoverableTransform):
     @classmethod
     def create_entities(cls, request: MaltegoMsg, response: MaltegoTransform):
-        username = request.getProperty("properties.channel")
-        messages = loop.run_until_complete(find_forwarded_messages_from_users(username))
+        identifier = safe_get_identifier(request, "properties.channel")
+        if not identifier:
+            response.addUIMessage("No channel specified", messageType="PartialError")
+            return
 
-        authors = list(
-            {
-                message.forward_sender_name
-                for message in messages
-                if message.forward_sender_name is not None
-            }
-        )
-        users = get_unique_forward_users(messages)
+        try:
+            users_with_avatars, authors = run_telegram(fetch_forwarded_users_and_authors(identifier))
 
-        for author in authors:
-            entity = response.addEntity("interlinked.telegram.Author", value=author)
-            entity.setLinkThickness(2)
+            for author_name in authors:
+                entity = response.addEntity("interlinked.telegram.Author", value=author_name)
+                entity.setLinkThickness(2)
 
-        for user in users:
-            entity = create_maltego_entity("interlinked.telegram.UserProfile", user)
+            for user, avatar_b64 in users_with_avatars:
+                entity = process_profile_entity(user, avatar_b64=avatar_b64)
+                entity.setLinkThickness(2)
+                response.entities.append(entity)
 
-            if user.username:
-                photo = fetch_web_info(user.username)["photo"]
-                entity.addProperty("properties.photo", value=photo)
-
-            entity.setLinkThickness(2)
-            response.entities.append(entity)
+        except Exception as e:
+            response.addUIMessage(f"Error fetching forwarded users: {e}", messageType="PartialError")
