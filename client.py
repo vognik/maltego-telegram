@@ -89,7 +89,6 @@ def get_client() -> Client:
                         api_hash=API_HASH,
                         session_string=session_str,
                         in_memory=True,
-                        no_updates=True,
                     )
                 else:
                     _client = Client(
@@ -97,7 +96,6 @@ def get_client() -> Client:
                         api_id=API_ID,
                         api_hash=API_HASH,
                         workdir=".",
-                        no_updates=True,
                     )
     return _client
 

@@ -10,10 +10,12 @@ itsdangerous==2.2.0
 jinja2==3.1.6
 maltego-trx==1.7.0
 markupsafe==3.0.4
+ntgcalls==3.0.3
+py-tgcalls==3.0.0
 pillow==12.3.0
 pyaes==1.6.1
 pycparser==3.11
-pyrogram @ git+https://github.com/KurimuzonAkuma/pyrogram.git@d4d5a2d316719f6e98de87246cf4c573994d728d
+Kurigram==2.2.26
 pysocks==1.7.1
 requests==2.34.2
 urllib3==2.8.0

@@ -91,6 +91,13 @@ TIMEOUT: int = config.get_int("misc", "timeout", fallback=15)
 if TIMEOUT <= 0:
     TIMEOUT = 15
 
+CONNECTION_TIMEOUT: int = (
+    config.get_int("misc", "connection_timeout")
+    or config.get_int("misc", "call_timeout", fallback=15)
+)
+if CONNECTION_TIMEOUT <= 0:
+    CONNECTION_TIMEOUT = 15
+
 # TgScan (tgdev.io) API Settings
 TGSCAN_TEST_MODE: bool = config.get_bool("tgscan", "test_mode", fallback=False)
 
