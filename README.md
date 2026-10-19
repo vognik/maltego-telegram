@@ -8,8 +8,8 @@
 
 <p align="center">
   <a href="#features">Features</a> •
-  <a href="#installation">Install</a> •
-  <a href="#running-subfinder">Usage</a> •
+  <a href="#install">Install</a> •
+  <a href="#usage">Install</a> •
 </p>
 
 ---
