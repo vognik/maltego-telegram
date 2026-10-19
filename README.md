@@ -9,7 +9,7 @@
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#install">Install</a> •
-  <a href="#usage">Install</a> •
+  <a href="#usage">Usage</a> •
 </p>
 
 ---
