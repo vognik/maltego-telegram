@@ -9,7 +9,7 @@
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#install">Install</a> •
-  <a href="#usage">Usage</a> •
+  <a href="#usage">Usage</a>
 </p>
 
 ---
@@ -18,16 +18,65 @@
 
 # Features
 
+## Sticker and emoji pack owners
+
 <h1 align="left">
   <img src="static/stickers.png" alt="maltego-telegram"></a>
   <br>
 </h1>
 
-- Sticker pack and emojis owner identification
-- User group membership mapping
-- Deleted post retrieval
-- Profile owner IP address disclosure through calls
-- And much more
+Sticker and custom emoji packs can provide another way to identify their creators.
+- Identify the account associated with a pack’s creation.
+- Resolve the creator’s profile when accessible.
+- Map the connection between the pack and its creator in Maltego.
+
+A creator’s account can provide a link between otherwise unrelated packs.
+
+## Similar channels
+
+<h1 align="left">
+  <img src="https://github.com/user-attachments/assets/87ff0649-3b8f-4e7c-85a7-1a5451230a6f" alt="maltego-telegram"></a>
+  <br>
+</h1>
+
+Telegram displays related channels as a list. Mapping these recommendations in Maltego makes their connections easier to explore.
+
+- Retrieve channel recommendations through the Telegram API.
+- Display channels as entities connected by recommendation links.
+- Expand the graph to identify groups of related channels.
+
+Expand recommendations from multiple channels to find shared connections.
+
+## Profiles linked to a channel
+
+<h1 align="left">
+  <img src="https://github.com/user-attachments/assets/6f2d875a-c0d1-48da-b5c2-82a5912c1c71" alt="maltego-telegram"></a>
+  <br>
+</h1>
+
+Forwarded messages may contain references to their original authors. These can reveal personal profiles associated with a channel.
+- Inspect forwarding metadata for references to user accounts.
+- Resolve accessible author profiles.
+- Connect those profiles to the channel in Maltego.
+
+Older forwards may retain author links after privacy settings change.
+
+## Deleted posts and archived content
+
+<h1 align="left">
+  <img src="https://github.com/user-attachments/assets/f3708918-4c9f-44f2-8be9-483e4f19cbea" alt="maltego-telegram"></a>
+  <br>
+</h1>
+
+Telegram assigns sequential numeric IDs to channel messages. Gaps in the sequence can help locate potentially deleted posts.
+- Detect missing IDs in a channel’s message history.
+- Check public Telegram archives for matching channel and post IDs.
+
+Archived copies may include the original text, media, and publication date.
+
+---
+
+There’s more to explore. Browse the [full collection of Transforms](https://github.com/vognik/maltego-telegram/tree/main/transforms) for additional capabilities.
 
 # Install
 
@@ -72,8 +121,6 @@ In Maltego, open **Import Config** and import both generated files:
 1. Drag an entity from the **Entity Palette** onto the graph.
 2. Right-click the entity to view available Transforms.
 3. Select a Transform to run it.
-
-Demo
 
 https://github.com/user-attachments/assets/dba4b5b1-a82d-4e26-b8e4-d063f5456f88
 
